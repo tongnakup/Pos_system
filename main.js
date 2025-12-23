@@ -23,6 +23,7 @@ function createWindow() {
     width: 1280,
     height: 800,
     title: "POS System (Cashier)",
+    autoHideMenuBar: true,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -47,14 +48,14 @@ function createWindow() {
   }
 }
 
-// 3. ✅ สร้างหน้าต่างลูกค้า (เพิ่มใหม่)
 function createCustomerWindow() {
   customerWindow = new BrowserWindow({
     width: 1000,
     height: 800,
     title: "Customer Display",
-    autoHideMenuBar: true, // ซ่อนเมนูด้านบน
-    x: 50, // ขยับตำแหน่งไม่ให้ทับหน้าหลักเกินไป
+    autoHideMenuBar: true,
+    autoHideMenuBar: true,
+    x: 50,
     y: 50,
     webPreferences: {
       nodeIntegration: true,
@@ -62,7 +63,6 @@ function createCustomerWindow() {
     },
   });
 
-  // โหลดหน้า customer.html
   customerWindow.loadURL("http://localhost:3000/customer.html");
 
   customerWindow.on("closed", () => {
