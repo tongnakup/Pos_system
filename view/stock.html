@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>จัดการสต็อกสินค้า</title>
+    <style>
+      /* Re-use CSS เดิมเพื่อให้ธีมเหมือนกัน */
+      body {
+        font-family: "Sarabun", sans-serif;
+        margin: 0;
+        background: #f4f6f9;
+        display: flex;
+      }
+      .sidebar {
+        width: 250px;
+        background: #343a40;
+        color: white;
+        height: 100vh;
+        position: fixed;
+      }
+      .sidebar h2 {
+        text-align: center;
+        padding: 20px 0;
+        background: #212529;
+        margin: 0;
+      }
+      .menu-item {
+        padding: 15px 20px;
+        border-bottom: 1px solid #4b545c;
+        cursor: pointer;
+        display: block;
+        color: white;
+        text-decoration: none;
+      }
+      .menu-item:hover {
+        background: #495057;
+      }
+      .content {
+        margin-left: 250px;
+        padding: 20px;
+        width: 100%;
+      }
+
+      /* Style ตาราง */
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      th,
+      td {
+        padding: 12px 15px;
+        text-align: left;
+        border-bottom: 1px solid #ddd;
+      }
+      th {
+        background-color: #6c757d;
+        color: white;
+      } /* สีเทาสำหรับหน้าสต็อก */
+      tr:hover {
+        background-color: #f1f1f1;
+      }
+
+      /* ปุ่ม Action */
+      .btn-edit {
+        background: #ffc107;
+        border: none;
+        padding: 5px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      .btn-delete {
+        background: #dc3545;
+        color: white;
+        border: none;
+        padding: 5px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+
+      /* Modal แก้ไข */
+      #edit-modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        align-items: center;
+        justify-content: center;
+      }
+      .modal-content {
+        background: white;
+        padding: 20px;
+        width: 300px;
+        border-radius: 8px;
+      }
+      input {
+        width: 90%;
+        padding: 8px;
+        margin: 5px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="sidebar">
+      <h2>🛍️ POS Admin</h2>
+      <a href="/admin" class="menu-item">📊 ภาพรวม</a>
+      <a href="/stock" class="menu-item" style="background: #007bff"
+        >📦 จัดการสต็อก</a
+      >
+      <a href="/" class="menu-item" target="_blank">💻 ไปหน้าขายของ</a>
+    </div>
+
+    <div class="content">
+      <h1>📦 คลังสินค้าทั้งหมด</h1>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Barcode</th>
+            <th>ชื่อสินค้า</th>
+            <th>ราคาทุน</th>
+            <th>ราคาขาย</th>
+            <th>คงเหลือ</th>
+            <th>จัดการ</th>
+          </tr>
+        </thead>
+        <tbody id="stock-table"></tbody>
+      </table>
+    </div>
+
+    <div id="edit-modal">
+      <div class="modal-content">
+        <h3>✏️ แก้ไขสินค้า</h3>
+        <input type="hidden" id="edit-id" />
+        <label>ชื่อสินค้า</label>
+        <input type="text" id="edit-name" />
+        <label>ราคาทุน</label>
+        <input type="number" id="edit-cost" />
+        <label>ราคาขาย</label>
+        <input type="number" id="edit-price" />
+        <label>จำนวนสต็อก</label>
+        <input type="number" id="edit-stock" style="background: #e9ecef" />
+
+        <div style="margin-top: 15px; text-align: right">
+          <button
+            onclick="saveEdit()"
+            style="
+              background: green;
+              color: white;
+              padding: 8px 15px;
+              border: none;
+              cursor: pointer;
+            "
+          >
+            บันทึก
+          </button>
+          <button
+            onclick="closeModal()"
+            style="
+              background: #ccc;
+              padding: 8px 15px;
+              border: none;
+              cursor: pointer;
+            "
+          >
+            ยกเลิก
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // 1. โหลดข้อมูลเมื่อเปิดหน้า
+      document.addEventListener("DOMContentLoaded", loadStock);
+
+      async function loadStock() {
+        const res = await fetch("/products"); // ใช้ API เดิมที่มีอยู่แล้ว
+        const products = await res.json();
+
+        const tbody = document.getElementById("stock-table");
+        tbody.innerHTML = "";
+
+        products.forEach((p) => {
+          const row = document.createElement("tr");
+
+          // เช็คสต็อก: ถ้าน้อยกว่า 10 ให้ตัวแดงเตือน
+          const stockStyle =
+            p.stock_qty < 10
+              ? "color: red; font-weight: bold;"
+              : "color: green;";
+
+          row.innerHTML = `
+                    <td>${p.barcode}</td>
+                    <td>${p.name}</td>
+                    <td>${p.cost_price}</td>
+                    <td>${p.selling_price}</td>
+                    <td style="${stockStyle}">${p.stock_qty}</td>
+                    <td>
+                        <button class="btn-edit" onclick='openEditModal(${JSON.stringify(
+                          p
+                        )})'>✏️ แก้ไข</button>
+                        <button class="btn-delete" onclick="deleteProduct(${
+                          p.id
+                        })">🗑️ ลบ</button>
+                    </td>
+                `;
+          tbody.appendChild(row);
+        });
+      }
+
+      // 2. เปิดหน้าต่างแก้ไข (ดึงค่าเก่ามาใส่ช่อง)
+      function openEditModal(product) {
+        document.getElementById("edit-modal").style.display = "flex";
+
+        document.getElementById("edit-id").value = product.id;
+        document.getElementById("edit-name").value = product.name;
+        document.getElementById("edit-cost").value = product.cost_price;
+        document.getElementById("edit-price").value = product.selling_price;
+        document.getElementById("edit-stock").value = product.stock_qty;
+      }
+
+      function closeModal() {
+        document.getElementById("edit-modal").style.display = "none";
+      }
+
+      // 3. บันทึกการแก้ไข (PUT)
+      async function saveEdit() {
+        const id = document.getElementById("edit-id").value;
+        const body = {
+          name: document.getElementById("edit-name").value,
+          cost: document.getElementById("edit-cost").value,
+          price: document.getElementById("edit-price").value,
+          stock: document.getElementById("edit-stock").value,
+        };
+
+        const res = await fetch("/products/" + id, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+
+        if (res.ok) {
+          alert("✅ แก้ไขเรียบร้อย");
+          closeModal();
+          loadStock();
+        } else {
+          alert("❌ แก้ไขไม่สำเร็จ");
+        }
+      }
+
+      //ลบสินค้า (DELETE)
+      async function deleteProduct(id) {
+        if (confirm("⚠️ ต้องการลบสินค้านี้ถาวรหรือไม่?")) {
+          const res = await fetch("/products/" + id, { method: "DELETE" });
+          if (res.ok) {
+            loadStock();
+          } else {
+            alert("❌ ลบไม่สำเร็จ");
+          }
+        }
+      }
+    </script>
+  </body>
+</html>
