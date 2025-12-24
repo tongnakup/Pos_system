@@ -624,28 +624,20 @@
       </div>
 
       <div id="view-categories" class="section-view">
-        <h1>📂 หมวดหมู่สินค้า</h1>
-        <div class="card">
-          <div class="form-row" style="align-items: flex-end">
-            <div style="flex: 3">
-              <label>ชื่อหมวดหมู่ใหม่</label
-              ><input
-                type="text"
-                id="cat-new-name"
-                placeholder="เช่น เครื่องดื่ม, ขนมขบเคี้ยว"
-              />
-            </div>
-            <div style="flex: 1">
-              <button
-                onclick="addCategory()"
-                class="btn-success"
-                style="width: 100%"
-              >
-                + เพิ่ม
-              </button>
-            </div>
-          </div>
+        <div
+          style="
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+          "
+        >
+          <h1>📂 หมวดหมู่สินค้า</h1>
+          <button onclick="openCategoryModal()" class="btn-success">
+            + เพิ่มหมวดหมู่ใหม่
+          </button>
         </div>
+
         <div class="table-container">
           <table>
             <thead>
@@ -1372,6 +1364,29 @@
       </div>
     </div>
 
+    <div id="category-modal" class="modal-overlay">
+      <div class="modal-content">
+        <h3>📂 เพิ่มหมวดหมู่สินค้า</h3>
+        <div class="form-group">
+          <label>ชื่อหมวดหมู่</label>
+          <input
+            type="text"
+            id="modal-cat-name"
+            placeholder="เช่น เครื่องดื่ม, ขนมขบเคี้ยว"
+          />
+        </div>
+        <div class="modal-buttons">
+          <button onclick="saveCategory()" class="btn-success">บันทึก</button>
+          <button
+            onclick="document.getElementById('category-modal').style.display='none'"
+            class="btn-cancel"
+          >
+            ยกเลิก
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div id="history-modal" class="modal-overlay">
       <div class="modal-content" style="width: 700px; max-width: 95%">
         <div
@@ -1714,17 +1729,34 @@
           );
         }
       }
-      async function addCategory() {
-        const name = document.getElementById("cat-new-name").value;
+      function openCategoryModal() {
+        document.getElementById("category-modal").style.display = "flex";
+        document.getElementById("modal-cat-name").value = "";
+        document.getElementById("modal-cat-name").focus();
+      }
+
+      async function saveCategory() {
+        const name = document.getElementById("modal-cat-name").value;
+
         if (!name) return alert("กรุณาใส่ชื่อหมวดหมู่");
-        await fetch("/categories", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name }),
-        });
-        document.getElementById("cat-new-name").value = "";
-        loadCategories();
-        showSuccess("เพิ่มหมวดหมู่เรียบร้อย");
+
+        try {
+          await fetch("/categories", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name }),
+          });
+
+          document.getElementById("category-modal").style.display = "none";
+          loadCategories();
+
+          if (typeof showSuccess === "function")
+            showSuccess("เพิ่มหมวดหมู่เรียบร้อย");
+          else alert("เพิ่มหมวดหมู่เรียบร้อย");
+        } catch (e) {
+          console.error(e);
+          alert("เกิดข้อผิดพลาดในการบันทึก");
+        }
       }
 
       // --- Stock ---

@@ -4,25 +4,54 @@ const path = require("path");
 const { fork } = require("child_process");
 
 let mainWindow;
-let customerWindow; // ✅ เพิ่มตัวแปรสำหรับจอลูกค้า
+let customerWindow;
 let serverProcess;
 
-// 1. สั่งรัน Server
 function startServer() {
   const serverPath = path.join(__dirname, "server.js");
+
+  console.log("Checking server path:", serverPath);
+
   serverProcess = fork(serverPath, [], {
     silent: true,
     env: { ...process.env, PORT: 3000 },
   });
-  console.log("🚀 Server started...");
+
+  console.log("🚀 Server process started with PID:", serverProcess.pid);
+
+  serverProcess.stderr.on("data", (data) => {
+    const errorMsg = data.toString();
+    console.error(`Server Error: ${errorMsg}`);
+    if (errorMsg.includes("Error") || errorMsg.includes("Cannot find module")) {
+      dialog.showErrorBox("Server Error (จากไส้ใน)", errorMsg);
+    }
+  });
+
+  serverProcess.on("exit", (code, signal) => {
+    if (code !== 0) {
+      dialog.showErrorBox(
+        "Server Crashed",
+        `Server ดับไปเอง! (Code: ${code})\nสาเหตุอาจเกิดจาก sqlite3 หรือ path ผิด`
+      );
+    }
+  });
+
+  serverProcess.on("error", (err) => {
+    dialog.showErrorBox(
+      "Spawn Error",
+      "ไม่สามารถเริ่ม Server ได้: " + err.message
+    );
+  });
 }
 
-// 2. สร้างหน้าต่างหลัก (คนขาย)
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     title: "POS System (Cashier)",
+    frame: false,
+    fullscreen: true,
+    autoHideMenuBar: true,
     autoHideMenuBar: true,
     webPreferences: {
       nodeIntegration: true,
@@ -31,14 +60,25 @@ function createWindow() {
     },
   });
 
-  // รอ 1.5 วิ ให้ Server พร้อม แล้วค่อยโหลดหน้าเว็บ
+  mainWindow.setMenu(null);
+
   setTimeout(() => {
-    mainWindow.loadURL("http://localhost:3000/view/login.html");
-  }, 1500);
+    const url = "http://localhost:3000/view/login.html";
+    mainWindow.loadURL(url);
+  }, 2000);
+
+  mainWindow.webContents.on(
+    "did-fail-load",
+    (event, errorCode, errorDescription) => {
+      dialog.showErrorBox(
+        "Load Error",
+        `โหลดหน้าจอไม่ขึ้นครับ!\nError: ${errorDescription} (${errorCode})`
+      );
+    }
+  );
 
   mainWindow.on("closed", function () {
     mainWindow = null;
-    // ถ้าปิดหน้าหลัก ให้ปิดจอลูกค้าด้วย
     if (customerWindow) customerWindow.close();
   });
 
@@ -53,8 +93,10 @@ function createCustomerWindow() {
     width: 1000,
     height: 800,
     title: "Customer Display",
+    frame: false,
+    fullscreen: true,
     autoHideMenuBar: true,
-    autoHideMenuBar: true,
+
     x: 50,
     y: 50,
     webPreferences: {
@@ -62,8 +104,11 @@ function createCustomerWindow() {
       contextIsolation: false,
     },
   });
+  customerWindow.setMenu(null);
 
-  customerWindow.loadURL("http://localhost:3000/customer.html");
+  setTimeout(() => {
+    customerWindow.loadURL("http://localhost:3000/view/customer.html");
+  }, 2500);
 
   customerWindow.on("closed", () => {
     customerWindow = null;
@@ -73,37 +118,13 @@ function createCustomerWindow() {
 // --- เริ่มทำงาน ---
 app.on("ready", () => {
   startServer();
-
-  createWindow(); // เปิดหน้าหลัก
-
-  // ✅ สั่งเปิดหน้าลูกค้าตามมา (ดีเลย์นิดนึง 2 วิ)
-  setTimeout(createCustomerWindow, 2000);
+  createWindow();
+  // เปิดหน้าลูกค้า
+  setTimeout(createCustomerWindow, 3000);
 });
 
 // ปิดโปรแกรม
 app.on("window-all-closed", function () {
   if (serverProcess) serverProcess.kill();
   if (process.platform !== "darwin") app.quit();
-});
-
-// --- Auto Update ---
-autoUpdater.on("update-available", () => {
-  dialog.showMessageBox({
-    type: "info",
-    title: "พบเวอร์ชันใหม่",
-    message: "กำลังดาวน์โหลดอัปเดต...",
-    buttons: ["ตกลง"],
-  });
-});
-autoUpdater.on("update-downloaded", () => {
-  dialog
-    .showMessageBox({
-      type: "question",
-      title: "พร้อมติดตั้ง",
-      message: "โหลดเสร็จแล้ว ติดตั้งเลยไหม?",
-      buttons: ["ใช่", "ไว้ทีหลัง"],
-    })
-    .then((result) => {
-      if (result.response === 0) autoUpdater.quitAndInstall();
-    });
 });
