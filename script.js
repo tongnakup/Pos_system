@@ -1,3 +1,4 @@
+const { ipcRenderer } = require("electron");
 let allProducts = [];
 let cart = [];
 let currentTotalToPay = 0;
@@ -19,7 +20,6 @@ document.addEventListener("DOMContentLoaded", () => {
   fetchDailySales();
   checkShiftStatus();
 
-  // จัดการสแกนเนอร์
   const input = document.getElementById("barcode-input");
   if (input) {
     input.focus();
@@ -33,7 +33,6 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
 
-    // คลิกพื้นที่ว่างให้โฟกัสกลับมาที่ช่องสแกน
     document.addEventListener("click", (e) => {
       const isInput =
         e.target.tagName === "INPUT" ||
@@ -41,7 +40,6 @@ document.addEventListener("DOMContentLoaded", () => {
         e.target.tagName === "SELECT";
       const isButton =
         e.target.tagName === "BUTTON" || e.target.closest("button");
-      // เช็คเพิ่มว่าไม่ได้คลิก Popup ของ Swal
       const isSwal = e.target.closest(".swal2-container");
 
       if (!isInput && !isButton && !isSwal) {
@@ -50,7 +48,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // จัดการช่องค้นหาสมาชิก
   const memberInput = document.getElementById("member-phone");
   if (memberInput) {
     memberInput.addEventListener("keypress", (e) => {
@@ -69,24 +66,21 @@ function holdBill() {
     return Swal.fire("ไม่สามารถพักบิลได้", "ตะกร้าสินค้าว่างเปล่า", "warning");
   }
 
-  // สร้างข้อมูลที่จะเก็บ
   const billData = {
-    id: Date.now(), // ใช้เวลาเป็น ID
+    id: Date.now(),
     timestamp: new Date().getTime(),
     timeStr: new Date().toLocaleTimeString("th-TH", {
       hour: "2-digit",
       minute: "2-digit",
     }),
-    cart: [...cart], // copy ตะกร้า
-    member: currentMember, // เก็บข้อมูลสมาชิกด้วย
+    cart: [...cart],
+    member: currentMember,
     total: currentTotalToPay,
   };
 
-  // บันทึกลง Array
   heldBills.push(billData);
   saveHeldBills();
 
-  // เคลียร์หน้าจอ
   cart = [];
   clearMember();
   updateCartUI();
@@ -121,12 +115,10 @@ function openHeldBillsModal() {
     noData.style.display = "block";
   } else {
     noData.style.display = "none";
-    // วาดรายการ
     heldBills.forEach((bill, index) => {
       const row = document.createElement("tr");
       row.style.borderBottom = "1px solid #eee";
 
-      // ชื่อรายการย่อๆ (เช่น เป๊ปซี่ + 2 รายการ)
       let summary = bill.cart[0].name;
       if (bill.cart.length > 1)
         summary += ` และอีก ${bill.cart.length - 1} อย่าง`;
@@ -155,7 +147,6 @@ function closeHeldBillsModal() {
 
 function restoreBill(index) {
   if (cart.length > 0) {
-    // ถ้าหน้าจอปัจจุบันมีของค้างอยู่ ให้เตือนก่อน
     Swal.fire({
       title: "มีสินค้าค้างอยู่หน้าจอ",
       text: "ต้องการเคลียร์สินค้าปัจจุบันทิ้ง แล้วดึงบิลเก่ามาแทนหรือไม่?",
@@ -176,7 +167,6 @@ function restoreBill(index) {
 function doRestore(index) {
   const bill = heldBills[index];
 
-  // คืนค่ากลับมาใส่ตัวแปรหลัก
   cart = [...bill.cart];
   if (bill.member) {
     setMember(bill.member);
@@ -184,11 +174,9 @@ function doRestore(index) {
     clearMember();
   }
 
-  // ลบออกจากรายการพัก
   heldBills.splice(index, 1);
   saveHeldBills();
 
-  // อัปเดตหน้าจอ
   updateCartUI();
   closeHeldBillsModal();
 
@@ -225,10 +213,8 @@ async function fetchCategoriesForPOS() {
 
     const tabsContainer = document.getElementById("category-tabs");
 
-    // ปุ่ม "ทั้งหมด"
     let html = `<button class="cat-tab active" onclick="selectCategory('all', this)">ทั้งหมด</button>`;
 
-    // ปุ่มหมวดหมู่อื่นๆ
     cats.forEach((c) => {
       html += `<button class="cat-tab" onclick="selectCategory(${c.id}, this)">${c.name}</button>`;
     });
@@ -499,7 +485,6 @@ function closeModal() {
   document.getElementById("barcode-input").focus();
 }
 
-//  แจ้งเตือนเพิ่มสินค้า
 async function saveNewProduct() {
   const barcode = document.getElementById("new-barcode-display").innerText;
   const name = document.getElementById("new-name").value;
@@ -755,7 +740,6 @@ async function selectPayment(method) {
   }
 }
 
-// แจ้งเตือนเงินไม่พอ + บันทึกสำเร็จ
 async function confirmPayment() {
   const received =
     parseFloat(document.getElementById("pay-received").value) || 0;
@@ -795,7 +779,6 @@ async function confirmPayment() {
 
       closePaymentModal();
 
-      // พิมพ์ใบเสร็จ
       printReceipt(
         result.receipt_no,
         result.change,
@@ -810,7 +793,6 @@ async function confirmPayment() {
       const change = received - finalTotal;
       syncToCustomerDisplay(true, received, change);
 
-      // เคลียร์ตะกร้า
       setTimeout(() => {
         cart = [];
         updateCartUI();
@@ -967,7 +949,9 @@ function printReceipt(
   printArea.classList.remove("paper-a4", "paper-58mm", "paper-80mm");
   printArea.classList.add("paper-" + printerType);
 
-  setTimeout(() => window.print(), 500);
+  setTimeout(() => {
+    ipcRenderer.send("do-silent-print");
+  }, 500);
 }
 
 // --- Sound Logic ---
@@ -1083,14 +1067,12 @@ window.addEventListener("storage", (e) => {
       if (action && action.type === "MEMBER_LOGIN") {
         console.log("ลูกค้ากรอกเบอร์มา:", action.phone);
 
-        // เอาเบอร์ไปใส่ช่องค้นหา
         const memberInput = document.getElementById("member-phone");
         if (memberInput) {
           memberInput.value = action.phone;
 
           searchMember();
 
-          // แจ้งเตือนแคชเชียร์
           const Toast = Swal.mixin({
             toast: true,
             position: "top-end",
@@ -1125,7 +1107,6 @@ async function fetchDailySales() {
   }
 }
 
-// --- ส่วนประวัติบิล & พิมพ์ซ้ำ ---
 async function openHistoryModal() {
   try {
     const res = await fetch("/admin/orders");
@@ -1175,13 +1156,11 @@ async function openHistoryModal() {
 
 async function reprintBill(order) {
   try {
-    //ดึงรายการสินค้า
     const res = await fetch(`/orders/${order.id}/items`);
     if (!res.ok) throw new Error("โหลดรายการสินค้าไม่ได้");
 
     const items = await res.json();
 
-    //รียกฟังก์ชันพิมพ์ใบเสร็จ
     printReceipt(
       order.receipt_no,
       order.change_amount,
@@ -1196,7 +1175,6 @@ async function reprintBill(order) {
   }
 }
 
-//ฟังก์ชันสั่งยกเลิกบิล
 function voidBill(orderId, receiptNo) {
   const currentUser = JSON.parse(sessionStorage.getItem("pos_user") || "{}");
   const defaultUser = currentUser.username || "";
@@ -1212,7 +1190,6 @@ function voidBill(orderId, receiptNo) {
     cancelButtonText: "ยกเลิก",
   }).then(async (result) => {
     if (result.isConfirmed) {
-      //เด้งหน้าต่างถาม Username / Password ของผู้อนุมัติ (Admin)
       const { value: formValues } = await Swal.fire({
         title: "🔐 ยืนยันสิทธิ์ผู้จัดการ (Manager)",
         html:
@@ -1253,7 +1230,6 @@ function voidBill(orderId, receiptNo) {
 
         const user = await authRes.json();
 
-        // เช็คว่าเป็น Admin หรือไม่?
         if (user.role !== "admin") {
           throw new Error(
             "⛔️ ไม่อนุมัติ! เฉพาะ ผู้จัดการ เท่านั้นที่ยกเลิกบิลได้"
@@ -1275,7 +1251,6 @@ function voidBill(orderId, receiptNo) {
     }
   });
 }
-//ฟังก์ชันปุ่มกดส่วนลดท้ายบิล
 async function openManualDiscount() {
   const { value: discount } = await Swal.fire({
     title: "ระบุส่วนลด (บาท)",
@@ -1297,7 +1272,6 @@ async function openManualDiscount() {
   if (discount !== undefined) {
     currentDiscount = parseFloat(discount);
 
-    // อัปเดต UI แสดงตัวเลข
     const row = document.getElementById("manual-discount-row");
     const txt = document.getElementById("manual-discount-text");
 
@@ -1325,7 +1299,6 @@ async function openManualDiscount() {
   }
 }
 
-//ฟังก์ชันกดปุ่ม Export Excel
 function exportReport() {
   const start = document.getElementById("rep-start").value;
   const end = document.getElementById("rep-end").value;
@@ -1387,7 +1360,6 @@ async function submitOpenShift() {
 
 async function initCloseShift() {
   try {
-    //ดึงข้อมูลสรุปยอด
     const res = await fetch("/shift/summary");
     if (!res.ok) return Swal.fire("Error", "ไม่สามารถดึงข้อมูลกะได้", "error");
 
@@ -1425,7 +1397,6 @@ async function confirmCloseShift() {
       const result = await res.json();
       document.getElementById("close-shift-modal").style.display = "none";
 
-      // แสดงผลต่าง
       let msg = `ยอดที่ควรมี: ${result.summary.expected.toLocaleString()}\nนับได้จริง: ${result.summary.actual.toLocaleString()}`;
       if (result.summary.diff === 0) msg += "\n\n✅ ยอดเงินตรงเป๊ะ!";
       else if (result.summary.diff > 0)

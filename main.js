@@ -209,6 +209,23 @@ ipcMain.on("activate-license", (event, inputKey) => {
   }
 });
 
+ipcMain.on("do-silent-print", (event, arg) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+
+  if (win) {
+    win.webContents.print(
+      {
+        silent: true,
+        printBackground: true,
+        deviceName: "",
+      },
+      (success, errorType) => {
+        if (!success) console.log("Print failed:", errorType);
+      }
+    );
+  }
+});
+
 ipcMain.on("app-quit", () => {
   app.quit();
 });
