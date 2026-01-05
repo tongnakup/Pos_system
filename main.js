@@ -1,47 +1,75 @@
-const { app, BrowserWindow, dialog } = require("electron");
-const { autoUpdater } = require("electron-updater");
+const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 const path = require("path");
-const { fork } = require("child_process");
+const { spawn } = require("child_process");
+const fs = require("fs");
+const { autoUpdater } = require("electron-updater");
 
+// 🔑 รหัสลับสำหรับปลดล็อคถาวร
+const MASTER_KEY = "Mypos2025";
+
+// ⏳ เวลาทดลองใช้งาน (หน่วยมิลลิวินาที)
+const TRIAL_LIMIT = 1 * 60 * 60 * 1000; // เทส 1 ชม.
+// const TRIAL_LIMIT = 30 * 1000; // (เทส 30 วินาที)
+
+const PORT = 3000;
 let mainWindow;
 let customerWindow;
 let serverProcess;
 
+function getAppStatus() {
+  const userDataPath = app.getPath("userData");
+  const configPath = path.join(userDataPath, "pos_config.json");
+
+  try {
+    let config = {};
+    if (fs.existsSync(configPath)) {
+      config = JSON.parse(fs.readFileSync(configPath));
+    } else {
+      config = { firstRun: Date.now(), isActivated: false };
+      fs.writeFileSync(configPath, JSON.stringify(config));
+    }
+
+    if (config.isActivated) return "active";
+
+    const timeUsed = Date.now() - config.firstRun;
+    if (timeUsed > TRIAL_LIMIT) {
+      return "expired";
+    }
+
+    return "trial";
+  } catch (error) {
+    console.error("Config Error:", error);
+    return "trial";
+  }
+}
+
+function activateApp() {
+  const userDataPath = app.getPath("userData");
+  const configPath = path.join(userDataPath, "pos_config.json");
+
+  if (fs.existsSync(configPath)) {
+    const config = JSON.parse(fs.readFileSync(configPath));
+    config.isActivated = true;
+    fs.writeFileSync(configPath, JSON.stringify(config));
+  }
+}
+
 function startServer() {
   const serverPath = path.join(__dirname, "server.js");
 
-  console.log("Checking server path:", serverPath);
-
-  serverProcess = fork(serverPath, [], {
+  serverProcess = spawn("node", [serverPath], {
+    cwd: __dirname,
     silent: true,
-    env: { ...process.env, PORT: 3000 },
   });
 
-  console.log("🚀 Server process started with PID:", serverProcess.pid);
-
-  serverProcess.stderr.on("data", (data) => {
-    const errorMsg = data.toString();
-    console.error(`Server Error: ${errorMsg}`);
-    if (errorMsg.includes("Error") || errorMsg.includes("Cannot find module")) {
-      dialog.showErrorBox("Server Error (จากไส้ใน)", errorMsg);
-    }
-  });
-
-  serverProcess.on("exit", (code, signal) => {
-    if (code !== 0) {
-      dialog.showErrorBox(
-        "Server Crashed",
-        `Server ดับไปเอง! (Code: ${code})\nสาเหตุอาจเกิดจาก sqlite3 หรือ path ผิด`
-      );
-    }
-  });
-
-  serverProcess.on("error", (err) => {
-    dialog.showErrorBox(
-      "Spawn Error",
-      "ไม่สามารถเริ่ม Server ได้: " + err.message
+  if (serverProcess.stdout) {
+    serverProcess.stdout.on("data", (data) => console.log(`Server: ${data}`));
+  }
+  if (serverProcess.stderr) {
+    serverProcess.stderr.on("data", (data) =>
+      console.error(`Server Error: ${data}`)
     );
-  });
+  }
 }
 
 function createWindow() {
@@ -49,10 +77,12 @@ function createWindow() {
     width: 1280,
     height: 800,
     title: "POS System (Cashier)",
+    icon: path.join(__dirname, "icon.png"),
+
     frame: false,
     fullscreen: true,
     autoHideMenuBar: true,
-    autoHideMenuBar: true,
+
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -63,51 +93,54 @@ function createWindow() {
   mainWindow.setMenu(null);
 
   setTimeout(() => {
-    const url = "http://localhost:3000/view/login.html";
-    mainWindow.loadURL(url);
+    mainWindow.loadURL(`http://localhost:${PORT}`);
   }, 2000);
 
-  mainWindow.webContents.on(
-    "did-fail-load",
-    (event, errorCode, errorDescription) => {
-      dialog.showErrorBox(
-        "Load Error",
-        `โหลดหน้าจอไม่ขึ้นครับ!\nError: ${errorDescription} (${errorCode})`
-      );
-    }
-  );
+  createCustomerWindow();
 
   mainWindow.on("closed", function () {
     mainWindow = null;
     if (customerWindow) customerWindow.close();
   });
 
-  // เช็คอัปเดต
-  if (app.isPackaged) {
-    autoUpdater.checkForUpdatesAndNotify();
-  }
+  autoUpdater.checkForUpdatesAndNotify();
 }
 
 function createCustomerWindow() {
+  const displays = require("electron").screen.getAllDisplays();
+
+  let externalDisplay = displays.find((display) => {
+    return display.bounds.x !== 0 || display.bounds.y !== 0;
+  });
+
+  let xPos = 50;
+  let yPos = 50;
+  if (externalDisplay) {
+    xPos = externalDisplay.bounds.x + 50;
+    yPos = externalDisplay.bounds.y + 50;
+  }
+
   customerWindow = new BrowserWindow({
     width: 1000,
     height: 800,
     title: "Customer Display",
+
     frame: false,
     fullscreen: true,
     autoHideMenuBar: true,
+    x: xPos,
+    y: yPos,
 
-    x: 50,
-    y: 50,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
     },
   });
+
   customerWindow.setMenu(null);
 
   setTimeout(() => {
-    customerWindow.loadURL("http://localhost:3000/view/customer.html");
+    customerWindow.loadURL(`http://localhost:${PORT}/view/customer.html`);
   }, 2500);
 
   customerWindow.on("closed", () => {
@@ -115,16 +148,67 @@ function createCustomerWindow() {
   });
 }
 
-// --- เริ่มทำงาน ---
-app.on("ready", () => {
+function createActivationWindow() {
+  const win = new BrowserWindow({
+    width: 600,
+    height: 500,
+    title: "หมดเวลาทดลองใช้",
+    frame: true,
+    autoHideMenuBar: true,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false,
+    },
+  });
+
+  win.loadFile("activate.html");
+  win.setMenu(null);
+}
+
+app.whenReady().then(() => {
   startServer();
-  createWindow();
-  // เปิดหน้าลูกค้า
-  setTimeout(createCustomerWindow, 3000);
+
+  const status = getAppStatus();
+
+  if (status === "active" || status === "trial") {
+    createWindow();
+  } else {
+    createActivationWindow();
+  }
+
+  app.on("activate", function () {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
 });
 
-// ปิดโปรแกรม
 app.on("window-all-closed", function () {
-  if (serverProcess) serverProcess.kill();
-  if (process.platform !== "darwin") app.quit();
+  if (process.platform !== "darwin") {
+    app.quit();
+  }
+  if (serverProcess) {
+    serverProcess.kill();
+  }
+});
+
+ipcMain.on("activate-license", (event, inputKey) => {
+  if (inputKey === MASTER_KEY) {
+    activateApp();
+
+    dialog
+      .showMessageBox({
+        type: "info",
+        title: "สำเร็จ",
+        message: "🎉 ปลดล็อคเรียบร้อย! ขอบคุณที่อุดหนุนครับ",
+      })
+      .then(() => {
+        app.relaunch();
+        app.exit();
+      });
+  } else {
+    event.sender.send("activation-failed");
+  }
+});
+
+ipcMain.on("app-quit", () => {
+  app.quit();
 });

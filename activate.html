@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <title>หมดเวลาทดลองใช้</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        background: #2c3e50;
+        color: white;
+        margin: 0;
+      }
+      .box {
+        background: white;
+        color: #333;
+        padding: 40px;
+        border-radius: 10px;
+        text-align: center;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      }
+      input {
+        padding: 10px;
+        font-size: 1.2em;
+        width: 250px;
+        text-align: center;
+        margin-top: 20px;
+        border: 2px solid #ccc;
+        border-radius: 5px;
+      }
+      button {
+        background: #27ae60;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        font-size: 1.2em;
+        margin-top: 10px;
+        cursor: pointer;
+        border-radius: 5px;
+        width: 100%;
+      }
+      button:hover {
+        background: #2ecc71;
+      }
+      .error {
+        color: red;
+        margin-top: 10px;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <h1>🔒 หมดเวลา Demo</h1>
+      <p>กรุณากรอก <b>Product Key</b> เพื่อปลดล็อคการใช้งานถาวร</p>
+      <input type="text" id="key-input" placeholder="XXXX-XXXX-XXXX" />
+      <button onclick="submitKey()">ปลดล็อค</button>
+      <p class="error" id="error-msg">รหัสไม่ถูกต้อง!</p>
+    </div>
+
+    <script>
+      const { ipcRenderer } = require("electron");
+
+      function submitKey() {
+        const key = document.getElementById("key-input").value;
+        ipcRenderer.send("activate-license", key);
+      }
+
+      ipcRenderer.on("activation-failed", () => {
+        document.getElementById("error-msg").style.display = "block";
+      });
+    </script>
+  </body>
+</html>

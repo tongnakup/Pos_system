@@ -1,5 +1,4 @@
 const express = require("express");
-// const mysql = require("mysql2"); // ❌ ไม่ใช้แล้ว
 const cors = require("cors");
 const path = require("path");
 const axios = require("axios");
@@ -17,13 +16,11 @@ const upload = multer({ dest: "uploads/" });
 const app = express();
 const PORT = 3000;
 
-// --- Config & Middleware ---
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "view")));
 app.use(express.static(__dirname));
 
-// --- Init Database Schema (สร้างตารางเมื่อเริ่มรัน) ---
 db.initSchema()
   .then(() => {
     console.log("✅ Database initialized successfully.");
@@ -54,12 +51,9 @@ const initShiftTable = async () => {
   }
 };
 initShiftTable();
-// --- Helper Functions ---
 
-// ฟังก์ชันอัปเดตสต็อกพร้อมบันทึก (แปลงเป็น Async/Await)
 async function updateStockLog(productId, changeAmount, type, details) {
   try {
-    // 1. ดึงข้อมูลสินค้าเดิม
     const [products] = await db.query(
       "SELECT name, stock_qty FROM products WHERE id = ?",
       [productId]
@@ -70,13 +64,11 @@ async function updateStockLog(productId, changeAmount, type, details) {
     const oldStock = product.stock_qty;
     const newStock = oldStock + changeAmount;
 
-    // 2. อัปเดตสต็อก
     await db.query("UPDATE products SET stock_qty = ? WHERE id = ?", [
       newStock,
       productId,
     ]);
 
-    // 3. บันทึก Stock Card
     const sqlLog =
       "INSERT INTO stock_card (product_id, product_name, action_type, qty_change, balance_after, details) VALUES (?, ?, ?, ?, ?, ?)";
     await db.query(sqlLog, [
@@ -95,8 +87,6 @@ async function updateStockLog(productId, changeAmount, type, details) {
   }
 }
 
-// --- Routes ---
-
 app.get("/", (req, res) =>
   res.sendFile(path.join(__dirname, "view", "index.html"))
 );
@@ -104,7 +94,6 @@ app.get("/admin", (req, res) =>
   res.sendFile(path.join(__dirname, "view", "admin.html"))
 );
 
-// --- Categories ---
 app.get("/categories", async (req, res) => {
   try {
     const [results] = await db.query("SELECT * FROM categories");
@@ -132,7 +121,6 @@ app.delete("/categories/:id", async (req, res) => {
   }
 });
 
-// --- Products ---
 app.get("/products", async (req, res) => {
   try {
     const sql = `SELECT p.*, c.name as category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id ORDER BY p.id DESC`;
@@ -143,83 +131,57 @@ app.get("/products", async (req, res) => {
   }
 });
 
-app.post("/products", async (req, res) => {
-  const { barcode, name, price, cost, stock, category_id } = req.body;
-  const initialStock = parseInt(stock) || 0;
-
+app.post("/products", upload.single("image"), async (req, res) => {
   try {
+    const { barcode, name, cost, price, category_id } = req.body;
+    const imagePath = req.file ? req.file.filename : null;
+
     const sql =
-      "INSERT INTO products (barcode, name, selling_price, cost_price, stock_qty, category_id) VALUES (?, ?, ?, ?, ?, ?)";
-    const [result] = await db.query(sql, [
+      "INSERT INTO products (barcode, name, cost_price, selling_price, category_id, stock_qty, image_path) VALUES (?, ?, ?, ?, ?, 0, ?)";
+
+    const [result, err] = await db.query(sql, [
       barcode,
       name,
+      cost,
       price,
-      cost || 0,
-      initialStock,
-      category_id || null,
+      category_id,
+      imagePath,
     ]);
 
-    const newId = result.insertId;
+    if (err) throw new Error(err.message);
 
-    if (initialStock !== 0) {
-      await updateStockLog(
-        newId,
-        initialStock,
-        "สินค้าใหม่",
-        "เพิ่มสินค้าเข้าสู่ระบบครั้งแรก"
-      );
-    }
-    res.json({ id: newId, message: "เพิ่มสำเร็จ" });
-  } catch (err) {
-    // SQLite error code for constraint violation might differ, but generic catch works
-    console.error(err);
-    res.status(500).json({ message: "Error (อาจจะบาร์โค้ดซ้ำ)" });
+    res.json({ id: result.insertId, image: imagePath });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
   }
 });
 
-app.put("/products/:id", async (req, res) => {
-  const { name, price, cost, stock, category_id } = req.body;
-  const productId = req.params.id;
-  const newStockQty = parseInt(stock);
-
+app.put("/products/:id", upload.single("image"), async (req, res) => {
   try {
-    const [rows] = await db.query(
-      "SELECT stock_qty FROM products WHERE id = ?",
-      [productId]
-    );
-    if (rows.length === 0)
-      return res.status(404).json({ error: "Product not found" });
-
-    const oldStock = rows[0].stock_qty;
-    const diff = newStockQty - oldStock;
+    const { barcode, name, cost, price, category_id, stock, old_image } =
+      req.body;
+    const imagePath = req.file ? req.file.filename : old_image;
 
     const sql =
-      "UPDATE products SET name=?, selling_price=?, cost_price=?, stock_qty=?, category_id=? WHERE id=?";
-    await db.query(sql, [
+      "UPDATE products SET barcode=?, name=?, cost_price=?, selling_price=?, category_id=?, stock_qty=?, image_path=? WHERE id=?";
+
+    const [result, err] = await db.query(sql, [
+      barcode,
       name,
-      price,
       cost,
-      newStockQty,
+      price,
       category_id,
-      productId,
+      stock,
+      imagePath,
+      req.params.id,
     ]);
 
-    if (diff !== 0) {
-      // Manual log insert because updateStockLog logic is slightly different
-      await db.query(
-        "INSERT INTO stock_card (product_id, product_name, action_type, qty_change, balance_after, details) VALUES (?, ?, ?, ?, ?, ?)",
-        [
-          productId,
-          name,
-          "ปรับสต็อก(Admin)",
-          diff,
-          newStockQty,
-          "แก้ไขข้อมูลสินค้า",
-        ]
-      );
-    }
-    res.json({ message: "แก้ไขสำเร็จ" });
+    if (err) throw new Error(err.message);
+
+    res.json({ message: "Updated successfully", image: imagePath });
   } catch (e) {
+    console.error(e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -233,7 +195,6 @@ app.delete("/products/:id", async (req, res) => {
   }
 });
 
-// Import Excel
 app.post("/products/import", upload.single("file"), async (req, res) => {
   if (!req.file)
     return res.status(400).json({ message: "กรุณาเลือกไฟล์ Excel" });
@@ -257,7 +218,6 @@ app.post("/products/import", upload.single("file"), async (req, res) => {
         failCount++;
         continue;
       }
-      // SQLite ใช้ INSERT OR IGNORE
       const sql = `INSERT OR IGNORE INTO products (barcode, name, cost_price, selling_price, stock_qty) VALUES (?, ?, ?, ?, ?)`;
       try {
         const [result] = await db.query(sql, [
@@ -268,7 +228,7 @@ app.post("/products/import", upload.single("file"), async (req, res) => {
           stock,
         ]);
         if (result.affectedRows > 0) successCount++;
-        else failCount++; // ซ้ำ
+        else failCount++;
       } catch (err) {
         failCount++;
       }
@@ -282,7 +242,6 @@ app.post("/products/import", upload.single("file"), async (req, res) => {
   }
 });
 
-// --- Checkout ---
 app.post("/checkout", async (req, res) => {
   const {
     cart,
@@ -350,7 +309,6 @@ app.post("/checkout", async (req, res) => {
       );
     }
 
-    // 5. ส่ง LINE (ถ้ามี)
     const payType = paymentMethod === "transfer" ? "โอนเงิน" : "เงินสด";
     let msg = `\n บิลใหม่: ${receiptNo}\n💵 ยอดขายสุทธิ: ${finalTotal.toLocaleString()} บาท`;
     if (discount > 0) msg += `\n(ส่วนลดใช้แต้ม: -${discount} บาท)`;
@@ -369,7 +327,6 @@ app.post("/checkout", async (req, res) => {
   }
 });
 
-// --- Purchase ---
 app.post("/purchase", async (req, res) => {
   const { supplier_id, items, total_cost } = req.body;
   if (!items || items.length === 0)
@@ -383,19 +340,16 @@ app.post("/purchase", async (req, res) => {
     const purchaseId = poRes.insertId;
 
     for (const item of items) {
-      // Insert item
       await db.query(
         "INSERT INTO purchase_items (purchase_id, product_id, qty, cost_price, total) VALUES (?, ?, ?, ?, ?)",
         [purchaseId, item.id, item.qty, item.cost, item.cost * item.qty]
       );
 
-      // Update Cost Price
       await db.query("UPDATE products SET cost_price = ? WHERE id = ?", [
         item.cost,
         item.id,
       ]);
 
-      // Add Stock
       await updateStockLog(
         item.id,
         item.qty,
@@ -411,7 +365,6 @@ app.post("/purchase", async (req, res) => {
   }
 });
 
-// --- Members ---
 app.get("/members/search", async (req, res) => {
   try {
     const keyword = `%${req.query.phone}%`;
@@ -477,7 +430,6 @@ app.delete("/members/:id", async (req, res) => {
   }
 });
 
-// --- Settings ---
 app.get("/settings", async (req, res) => {
   try {
     const [r] = await db.query("SELECT * FROM settings WHERE id=1");
@@ -528,7 +480,6 @@ app.put("/settings", async (req, res) => {
   }
 });
 
-// --- Suppliers ---
 app.get("/suppliers", async (req, res) => {
   try {
     const [r] = await db.query("SELECT * FROM suppliers");
@@ -573,7 +524,6 @@ app.delete("/suppliers/:id", async (req, res) => {
   }
 });
 
-// --- Users & Login ---
 app.post("/login", async (req, res) => {
   const { username, password } = req.body;
   try {
@@ -654,7 +604,6 @@ app.delete("/users/:id", async (req, res) => {
   }
 });
 
-// --- Admin Dashboard
 app.get("/admin/summary", async (req, res) => {
   try {
     const sql = `SELECT COUNT(id) as total_bills, COALESCE(SUM(total_amount),0) as total_sales FROM orders WHERE date(sale_date) = date('now', 'localtime')`;
@@ -676,7 +625,6 @@ app.get("/admin/orders", async (req, res) => {
   }
 });
 
-// ดึงรายการสินค้าของบิลนั้น
 app.get("/orders/:id/items", async (req, res) => {
   try {
     const [items] = await db.query(
@@ -689,26 +637,21 @@ app.get("/orders/:id/items", async (req, res) => {
   }
 });
 
-//ยกเลิกบิล
 app.delete("/orders/:id", async (req, res) => {
   const orderId = req.params.id;
 
   try {
-    //ดึงข้อมูลบิลมาก่อน
     const [orders] = await db.query("SELECT * FROM orders WHERE id = ?", [
       orderId,
     ]);
     if (orders.length === 0)
       return res.status(404).json({ message: "ไม่พบบิลนี้" });
     const order = orders[0];
-
-    //ดึงรายการสินค้าในบิล
     const [items] = await db.query(
       "SELECT * FROM order_items WHERE order_id = ?",
       [orderId]
     );
 
-    //วนลูปคืนสต็อกสินค้า
     for (const item of items) {
       await updateStockLog(
         item.product_id,
@@ -718,7 +661,6 @@ app.delete("/orders/:id", async (req, res) => {
       );
     }
 
-    //จัดการแต้มสมาชิก
     if (order.member_id) {
       if (order.earned_points > 0) {
         await db.query("UPDATE members SET points = points - ? WHERE id = ?", [
@@ -726,7 +668,6 @@ app.delete("/orders/:id", async (req, res) => {
           order.member_id,
         ]);
       }
-      //คืนแต้มที่ใช้ไปกลับมา
       if (order.points_used > 0) {
         await db.query("UPDATE members SET points = points + ? WHERE id = ?", [
           order.points_used,
@@ -748,7 +689,6 @@ app.delete("/orders/:id", async (req, res) => {
 app.get("/admin/export-report", async (req, res) => {
   const { start, end } = req.query;
   try {
-    //ดึงข้อมูลจาก Database ตามวันที่เลือก
     const sql =
       "SELECT * FROM orders WHERE date(sale_date) BETWEEN ? AND ? ORDER BY sale_date DESC";
     const [orders] = await db.query(sql, [start, end]);
@@ -757,7 +697,6 @@ app.get("/admin/export-report", async (req, res) => {
       return res.status(404).send("ไม่พบข้อมูลในช่วงเวลานี้");
     }
 
-    // จัดรูปแบบข้อมูล
     const data = orders.map((o) => ({
       วันที่: new Date(o.sale_date).toLocaleString("th-TH"),
       เลขที่บิล: o.receipt_no,
@@ -772,7 +711,6 @@ app.get("/admin/export-report", async (req, res) => {
     const wb = xlsx.utils.book_new();
     const ws = xlsx.utils.json_to_sheet(data);
 
-    //จัดความกว้างคอลัมน์
     ws["!cols"] = [
       { wch: 20 },
       { wch: 20 },
@@ -786,7 +724,6 @@ app.get("/admin/export-report", async (req, res) => {
 
     xlsx.utils.book_append_sheet(wb, ws, "Sales Report");
 
-    //ส่งไฟล์กลับไปให้คนกดโหลด
     const buf = xlsx.write(wb, { type: "buffer", bookType: "xlsx" });
 
     res.setHeader(
@@ -804,7 +741,6 @@ app.get("/admin/export-report", async (req, res) => {
   }
 });
 
-// ค้นหารายงานยอดขาย
 app.get("/admin/report", async (req, res) => {
   const { start, end } = req.query;
   try {
@@ -858,7 +794,6 @@ app.get("/stock/card/:id", async (req, res) => {
   }
 });
 
-// --- Helper: LINE & QR ---
 async function sendLineNotify(message) {
   try {
     const [r] = await db.query("SELECT line_token FROM settings WHERE id=1");
@@ -911,7 +846,6 @@ app.get("/shift/current", async (req, res) => {
   }
 });
 
-//(Open Shift)
 app.post("/shift/open", async (req, res) => {
   const { user_id, user_name, start_cash } = req.body;
   try {
@@ -931,10 +865,8 @@ app.post("/shift/open", async (req, res) => {
   }
 });
 
-//Preview Close Shift)
 app.get("/shift/summary", async (req, res) => {
   try {
-    //ดึงกะปัจจุบัน
     const [shifts] = await db.query(
       "SELECT * FROM shifts WHERE status = 'open' LIMIT 1"
     );
@@ -952,7 +884,6 @@ app.get("/shift/summary", async (req, res) => {
     const [salesRes] = await db.query(sqlSales, [currentShift.start_time]);
     const cashSales = salesRes[0].cash_sales;
 
-    //เงินที่ควรมีในลิ้นชัก
     const expected = currentShift.start_cash + cashSales;
 
     res.json({
@@ -968,7 +899,6 @@ app.get("/shift/summary", async (req, res) => {
 app.post("/shift/close", async (req, res) => {
   const { actual_cash } = req.body;
   try {
-    //ดึงข้อมูลสรุป
     const [shifts] = await db.query(
       "SELECT * FROM shifts WHERE status = 'open' LIMIT 1"
     );
@@ -976,7 +906,6 @@ app.post("/shift/close", async (req, res) => {
       return res.status(400).json({ message: "ไม่มีกะเปิดอยู่" });
     const currentShift = shifts[0];
 
-    //คำนวณยอดอีกครั้งเพื่อความชัวร์
     const [salesRes] = await db.query(
       "SELECT COALESCE(SUM(total_amount), 0) as cash_sales FROM orders WHERE payment_method = 'cash' AND sale_date >= ?",
       [currentShift.start_time]
@@ -985,7 +914,6 @@ app.post("/shift/close", async (req, res) => {
     const expected = currentShift.start_cash + cashSales;
     const diff = actual_cash - expected;
 
-    //อัปเดตตาราง
     const sqlClose = `
             UPDATE shifts 
             SET end_time = datetime('now', 'localtime'), 
@@ -1014,7 +942,6 @@ app.post("/shift/close", async (req, res) => {
   }
 });
 
-//(Backup)
 app.get("/admin/backup", (req, res) => {
   const dbPath = path.join(__dirname, "my_pos_data.db");
 
